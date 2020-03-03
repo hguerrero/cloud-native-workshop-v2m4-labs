@@ -33,5 +33,7 @@ public class CodecOrderService {
     }
 
     // TODO: Add MongoCollection method here
-    
+    private MongoCollection<Order> getCollection(){
+        return mongoClient.getDatabase("order").getCollection("order", Order.class);
+    }
 }
