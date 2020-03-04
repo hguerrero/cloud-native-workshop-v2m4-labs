@@ -13,12 +13,11 @@ import javax.inject.Inject;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 
-// import org.apache.kafka.clients.producer.KafkaProducer;
-// import org.apache.kafka.clients.producer.Producer;
-// import org.apache.kafka.clients.producer.ProducerRecord;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import io.quarkus.runtime.StartupEvent;
+import io.smallrye.reactive.messaging.annotations.Channel;
+import io.smallrye.reactive.messaging.annotations.Emitter;
 
 import java.util.Properties;
 
@@ -70,20 +69,13 @@ public class CartResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "checkout")
     public ShoppingCart checkout(@PathParam("cartId") String cartId, Order order) {
-        // TODO ADD for KAFKA
-        //sendOrder(order, cartId);
+        sendOrder(order, cartId);
         return shoppingCartService.checkout(cartId);
     }
 
-    // TODO ADD for KAFKA
+    // TODO ADD for EDA
     private void sendOrder(Order order, String cartId) {
 
     }
-
-    // TODO ADD for KAFKA
-    public void init(@Observes StartupEvent ev) {
-
-    }
-
 
 }
