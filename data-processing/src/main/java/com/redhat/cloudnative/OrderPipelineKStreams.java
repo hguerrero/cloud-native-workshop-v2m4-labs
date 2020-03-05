@@ -33,33 +33,49 @@ public class OrderPipelineKStreams {
 
         KStream<String, String> raw = builder.stream("dbserver1.order.order", Consumed.with(Serdes.String(), Serdes.String()));
 
-        // Mask CC info
-        KStream<String, String> orders = raw.mapValues(
-            value -> {
-				try {
-                    JsonObject order = new JsonObject(value);
-                    String ccNumber = order.getString("ccNumber");
-                    order.put("ccNumber", "****" + ccNumber.substring(ccNumber.length()-4));
-					return order.encode();
-				} catch (Exception e) {
-					e.printStackTrace();
-                }
-                return null;
-			}
-        );
-
-        KStream<String, String>[] fraud = orders.branch(
-            (key,value) -> {
-                JsonObject o = new JsonObject(value);
-                return Double.valueOf(o.getString("total")) > 250;
+        // Compact the orders by Id to get the latest status
+        KTable<String,String> values = raw.groupByKey().reduce(
+            (aggValue, newValue) -> {
+                if (newValue.equals(aggValue)) return aggValue;
+                JsonObject newOrder = new JsonObject(newValue);
+                JsonObject aggOrder = new JsonObject(aggValue);
+                aggOrder.put("status", newOrder.getString("status"));
+                return aggOrder.encode();
             }
         );
 
+        // Mask CC info
+        KStream<String, String> orders = values.toStream().mapValues(
+            value -> {
+                JsonObject order = new JsonObject(value);
+                String ccNumber = order.getString("ccNumber");
+                order.put("ccNumber", "****" + ccNumber.substring(ccNumber.length()-4));
+                return order.encode();
+			}
+        );
+
+        // Detect failed orders with high value
+        KStream<String, String>[] fraud = orders.branch(
+            (key,value) -> {
+                JsonObject o = new JsonObject(value);
+                double orderValue = Double.valueOf(o.getString("total"));
+                String orderStatus = o.getString("status");
+                if (orderValue > 250 && orderStatus.equals("FAILED")) {
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        fraud[0].to("potential-fraud", Produced.with(Serdes.String(), Serdes.String()));
+
+        // Group all orders to get globals
         KGroupedStream<Long,String> allOrders = orders.groupBy(
             (key, value) -> 1l, 
             Grouped.with(Serdes.Long(), Serdes.String())
         );
 
+        // Calculate summary
         KTable<Long, OrderSummary> aggregatedOrders = allOrders.aggregate(
             () -> new OrderSummary(0d, 0l), 
             (key, value, aggregation) -> {
@@ -73,11 +89,6 @@ public class OrderPipelineKStreams {
         );
 
         aggregatedOrders.toStream().to("orders-summary");
-
-        fraud[0].to("potential-fraud", Produced.with(Serdes.String(), Serdes.String()));
-        // KStream<Long, Long> count = allOrders.count().toStream();
-        // count
-        // .peek((key, value) -> log.info("key => " + key + " value => " + value));
 
 		return builder.build();
     }
